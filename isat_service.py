@@ -96,26 +96,36 @@ def get_history(limit=300, start=None, end=None):
     Ambil data sinyal (timestamp, rssi, dbm, ber).
     Jika start/end (unix seconds) diberikan -> filter dalam window.
     """
+    if not os.path.exists(DB_PATH):
+        print("[WARN] Database tidak ditemukan di cloud.")
+        return []  # biar gak error kalau dijalankan di Railway tanpa DB
+
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    if start is not None and end is not None:
-        sql = "SELECT timestamp, rssi, dbm, ber FROM csq_log WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp DESC LIMIT ?"
-        cur.execute(sql, (start, end, limit))
-    elif start is not None:
-        sql = "SELECT timestamp, rssi, dbm, ber FROM csq_log WHERE timestamp >= ? ORDER BY timestamp DESC LIMIT ?"
-        cur.execute(sql, (start, limit))
-    elif end is not None:
-        sql = "SELECT timestamp, rssi, dbm, ber FROM csq_log WHERE timestamp < ? ORDER BY timestamp DESC LIMIT ?"
-        cur.execute(sql, (end, limit))
-    else:
-        sql = "SELECT timestamp, rssi, dbm, ber FROM csq_log ORDER BY timestamp DESC LIMIT ?"
-        cur.execute(sql, (limit,))
+    try:
+        if start is not None and end is not None:
+            sql = "SELECT timestamp, rssi, dbm, ber FROM csq_log WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp DESC LIMIT ?"
+            cur.execute(sql, (start, end, limit))
+        elif start is not None:
+            sql = "SELECT timestamp, rssi, dbm, ber FROM csq_log WHERE timestamp >= ? ORDER BY timestamp DESC LIMIT ?"
+            cur.execute(sql, (start, limit))
+        elif end is not None:
+            sql = "SELECT timestamp, rssi, dbm, ber FROM csq_log WHERE timestamp < ? ORDER BY timestamp DESC LIMIT ?"
+            cur.execute(sql, (end, limit))
+        else:
+            sql = "SELECT timestamp, rssi, dbm, ber FROM csq_log ORDER BY timestamp DESC LIMIT ?"
+            cur.execute(sql, (limit,))
 
-    rows = cur.fetchall()
-    conn.close()
-    rows.reverse()  # supaya urut dari yang lama -> baru
-    return [{"timestamp": r[0], "rssi": r[1], "dbm": r[2], "ber": r[3]} for r in rows]
+        rows = cur.fetchall()
+        rows.reverse()
+        return [{"timestamp": r[0], "rssi": r[1], "dbm": r[2], "ber": r[3]} for r in rows]
+    except Exception as e:
+        print("[ERROR] Query gagal:", e)
+        return []
+    finally:
+        conn.close()
+
 
 # === FUNGSI CALL ===
 def make_call(number="+870772001899", call_seconds=15):
@@ -310,7 +320,19 @@ def call_now():
 
 # === MAIN RUN ===
 if __name__ == '__main__':
+    on_cloud = os.environ.get("RAILWAY_ENVIRONMENT") is not None
+
+    if on_cloud:
+        print("[INFO] Running on Railway Cloud - serial dan polling dinonaktifkan.")
+        ser = None  # jangan inisialisasi serial
+    else:
+        print("[INFO] Running locally - membuka koneksi serial.")
+        open_serial()
+        poll_thread = threading.Thread(target=polling_loop, daemon=True)
+        poll_thread.start()
+
     port = int(os.environ.get("PORT", 5000))
     print(f"[START] Flask running on 0.0.0.0:{port}")
     app.run(host='0.0.0.0', port=port)
+
 
