@@ -1,6 +1,7 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import serial, time, re, sqlite3, threading
+import os
 
 # === CONFIG ===
 PORT = '/dev/ttyACM0'      # sesuaikan port modem
@@ -309,5 +310,7 @@ def call_now():
 
 # === MAIN RUN ===
 if __name__ == '__main__':
-    print(f"[START] Flask running on 0.0.0.0:{FLASK_PORT}")
-    app.run(host='0.0.0.0', port=FLASK_PORT)
+    port = int(os.environ.get("PORT", 5000))
+    print(f"[START] Flask running on 0.0.0.0:{port}")
+    app.run(host='0.0.0.0', port=port)
+
