@@ -1,6 +1,7 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import serial, time, re, sqlite3, threading
+import requests
 
 # === CONFIG ===
 PORT = '/dev/ttyACM0'      # sesuaikan port modem
@@ -236,6 +237,19 @@ def status_auto_call():
 auto_call_thread = threading.Thread(target=auto_call_loop, daemon=True)
 auto_call_thread.start()
 
+def send_to_cloud(ts, rssi, dbm, ber):
+    """Kirim data hasil pembacaan sinyal ke Railway Cloud."""
+    try:
+        url = "https://web-production-7408.up.railway.app/history"
+        payload = {"timestamp": ts, "rssi": rssi, "dbm": dbm, "ber": ber}
+        res = requests.post(url, json=payload, timeout=5)
+        if res.status_code == 200:
+            print("[SYNC] Data terkirim ke cloud ✅")
+        else:
+            print(f"[SYNC] Gagal kirim ke cloud ❌ ({res.status_code})")
+    except Exception as e:
+        print("[WARN] Tidak bisa kirim ke cloud:", e)
+
 # === POLLING LOOP ===
 def polling_loop():
     """Loop pembacaan sinyal (CSQ) periodik."""
@@ -249,6 +263,7 @@ def polling_loop():
 
         if rssi is not None:
             insert_csq(ts, rssi, dbm, ber)
+            send_to_cloud(ts, rssi, dbm, ber)  # ⬅️ kirim ke Railway
             print(f"[LOG] {time.strftime('%H:%M:%S')} → RSSI={rssi}, dBm={dbm}, BER={ber}")
         else:
             print(f"[WARN] {time.strftime('%H:%M:%S')} → gagal baca sinyal")
@@ -257,6 +272,7 @@ def polling_loop():
             print(f"[DEBUG] Jeda antar polling: {ts - last_ts}s (interval={current_interval}s)")
         last_ts = ts
 
+        # tunggu sampai waktu polling berikutnya
         next_poll += current_interval
         sleep_time = next_poll - time.time()
         if sleep_time > 0:
@@ -264,6 +280,7 @@ def polling_loop():
         else:
             next_poll = time.time()
 
+# jalankan polling di thread terpisah
 poll_thread = threading.Thread(target=polling_loop, daemon=True)
 poll_thread.start()
 
@@ -306,6 +323,10 @@ def call_now():
     secs = int(request.args.get('secs', 15))
     result = make_call(number=number, call_seconds=secs)
     return jsonify(result)
+
+@app.route('/')
+def home():
+    return "✅ ISAT Backend aktif dan berjalan di Railway"
 
 # === MAIN RUN ===
 if __name__ == '__main__':
