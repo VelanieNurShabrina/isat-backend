@@ -172,6 +172,15 @@ def add_history():
         print("[ERROR] Gagal menerima data:", e, flush=True)
         return jsonify({"status": "error", "msg": str(e)}), 500
 
+@app.route('/')
+def index():
+    return jsonify({
+        "status": "ok",
+        "message": "ISAT Backend is running successfully 🚀",
+        "available_routes": [
+            "/signal", "/history", "/config", "/auto_call/start", "/auto_call/stop"
+        ]
+    })
 
 # === MAIN RUN ===
 if __name__ == '__main__':
