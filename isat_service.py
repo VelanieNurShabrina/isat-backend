@@ -176,7 +176,7 @@ def add_history():
 def index():
     return jsonify({
         "status": "ok",
-        "message": "ISAT Backend is running successfully 🚀",
+        "message": "ISAT Backend is running successfully 🚀 v2",
         "available_routes": [
             "/signal", "/history", "/config", "/auto_call/start", "/auto_call/stop"
         ]
