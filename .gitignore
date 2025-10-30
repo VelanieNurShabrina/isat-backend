@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+isat_data.db
+venv/
+.env
+*.log
