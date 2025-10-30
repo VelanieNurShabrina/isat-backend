@@ -298,6 +298,22 @@ def history():
     data = get_history(limit=limit, start=start, end=end)
     return jsonify({"data": data})
 
+@app.route('/history', methods=['POST'])
+def add_history():
+    """
+    Endpoint untuk menerima data dari Raspberry (cloud sync).
+    """
+    try:
+        data = request.get_json()
+        print("[CLOUD] Data diterima:", data)
+
+        # contoh: kalau nanti mau disimpan juga di Railway
+        # (sementara kita tampilkan aja)
+        return jsonify({"status": "ok", "msg": "Data diterima", "data": data})
+    except Exception as e:
+        return jsonify({"status": "error", "msg": str(e)})
+
+
 @app.route('/config', methods=['GET'])
 def update_config():
     global current_interval
