@@ -163,14 +163,29 @@ def history():
 
 @app.route('/history', methods=['POST'])
 def add_history():
-    """Endpoint cloud untuk menerima data dari Raspberry."""
+    """Endpoint cloud untuk menerima data dari Raspberry dan simpan ke DB."""
     try:
         data = request.get_json()
         print("[CLOUD] Data diterima:", data, flush=True)
-        return jsonify({"status": "ok", "msg": "Data diterima", "data": data})
+
+        # Simpan ke database
+        timestamp = data.get("timestamp")
+        rssi = data.get("rssi")
+        dbm = data.get("dbm")
+        ber = data.get("ber")
+
+        if timestamp and rssi is not None:
+            insert_csq(timestamp, rssi, dbm, ber)
+            print(f"[DB] Data disimpan ke database: RSSI={rssi}, dBm={dbm}, BER={ber}")
+        else:
+            print("[WARN] Data tidak lengkap, tidak disimpan.")
+
+        return jsonify({"status": "ok", "msg": "Data diterima dan disimpan", "data": data})
+
     except Exception as e:
         print("[ERROR] Gagal menerima data:", e, flush=True)
         return jsonify({"status": "error", "msg": str(e)}), 500
+
 
 @app.route('/')
 def index():
