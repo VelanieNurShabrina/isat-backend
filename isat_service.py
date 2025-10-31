@@ -81,6 +81,25 @@ def insert_csq(timestamp, rssi, dbm, ber):
     except Exception as e:
         print("[ERROR] DB insert:", e)
 
+def init_db():
+    """Buat tabel csq_log kalau belum ada."""
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=10)
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS csq_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp INTEGER,
+                rssi INTEGER,
+                dbm REAL,
+                ber INTEGER
+            )
+        """)
+        conn.commit()
+        conn.close()
+        print("[INIT] Database siap digunakan ✅", flush=True)
+    except Exception as e:
+        print("[ERROR] Gagal inisialisasi database:", e, flush=True)
 
 def get_history(limit=300, start=None, end=None):
     """Ambil data sinyal dari database (lokal)."""
@@ -223,6 +242,8 @@ def set_interval():
 
 # === MAIN RUN ===
 if __name__ == '__main__':
+    init_db()
+    
     on_cloud = os.environ.get("RAILWAY_ENVIRONMENT") is not None
 
     if on_cloud:
