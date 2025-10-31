@@ -182,6 +182,30 @@ def index():
         ]
     })
 
+# === KONFIGURASI INTERVAL ===
+@app.route('/config/interval', methods=['GET'])
+def get_interval():
+    """Mengambil interval polling saat ini."""
+    global current_interval
+    return jsonify({"status": "ok", "interval": current_interval})
+
+
+@app.route('/config', methods=['GET'])
+def set_interval():
+    """Mengubah interval polling dari frontend."""
+    global current_interval
+    try:
+        new_interval = request.args.get('interval', type=int)
+        if new_interval and new_interval > 0:
+            current_interval = new_interval
+            print(f"[CONFIG] Interval diubah menjadi {new_interval} detik", flush=True)
+            return jsonify({"status": "ok", "message": "Interval updated", "interval": current_interval})
+        else:
+            return jsonify({"status": "error", "message": "Invalid interval value"}), 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 # === MAIN RUN ===
 if __name__ == '__main__':
     on_cloud = os.environ.get("RAILWAY_ENVIRONMENT") is not None
