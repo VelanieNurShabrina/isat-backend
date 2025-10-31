@@ -33,54 +33,8 @@ def open_serial():
 DBM_LOOKUP = {i: -133 + 0.5 * (i - 1) for i in range(1, 56)}
 DBM_LOOKUP[0] = 0
 
-# === PARSE AT+CSQ ===
-def parse_csq_response(resp):
-    """Parse respons AT+CSQ dan ubah ke RSSI, dBm, dan BER."""
-    m = re.search(r'\+CSQ:\s*(\d+),(\d+)', resp)
-    if m:
-        rssi = int(m.group(1))
-        ber = int(m.group(2))
-        dbm = DBM_LOOKUP.get(rssi, None)
-        return rssi, dbm, ber
-    return None, None, None
-
-
-# === READ SIGNAL ===
-def read_csq_once():
-    """Kirim perintah AT+CSQ dan ambil hasilnya."""
-    global ser
-    if ser is None:
-        open_serial()
-        if ser is None:
-            return None, None, None
-    try:
-        with serial_lock:
-            ser.reset_input_buffer()
-            ser.write(b'AT+CSQ\r')
-            time.sleep(0.5)
-            resp = ser.read_all().decode(errors='ignore')
-        return parse_csq_response(resp)
-    except Exception as e:
-        print("[ERROR] Serial read failed:", e)
-        ser = None
-        return None, None, None
-
 
 # === DATABASE FUNCTIONS ===
-def insert_csq(timestamp, rssi, dbm, ber):
-    """Masukkan data sinyal ke database."""
-    try:
-        conn = sqlite3.connect(DB_PATH, timeout=10)
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO csq_log (timestamp, rssi, dbm, ber) VALUES (?, ?, ?, ?)",
-            (timestamp, rssi, dbm, ber)
-        )
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print("[ERROR] DB insert:", e)
-
 def init_db():
     """Buat tabel csq_log kalau belum ada."""
     try:
@@ -101,8 +55,27 @@ def init_db():
     except Exception as e:
         print("[ERROR] Gagal inisialisasi database:", e, flush=True)
 
+
+def insert_csq(timestamp, rssi, dbm, ber):
+    """Masukkan data sinyal ke database."""
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=10)
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO csq_log (timestamp, rssi, dbm, ber) VALUES (?, ?, ?, ?)",
+            (timestamp, rssi, dbm, ber)
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print("[ERROR] DB insert:", e)
+
+
 def get_history(limit=300, start=None, end=None):
-    """Ambil data sinyal dari database (lokal)."""
+    """
+    Ambil data sinyal dari database (lokal/cloud).
+    Jika start dan end diberikan → filter berdasarkan rentang waktu.
+    """
     if not os.path.exists(DB_PATH):
         print("[WARN] Database tidak ditemukan di cloud.")
         return []
@@ -110,11 +83,23 @@ def get_history(limit=300, start=None, end=None):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     try:
-        sql = "SELECT timestamp, rssi, dbm, ber FROM csq_log ORDER BY timestamp DESC LIMIT ?"
-        cur.execute(sql, (limit,))
+        if start and end:
+            sql = """SELECT timestamp, rssi, dbm, ber 
+                     FROM csq_log 
+                     WHERE timestamp BETWEEN ? AND ? 
+                     ORDER BY timestamp ASC 
+                     LIMIT ?"""
+            cur.execute(sql, (start, end, limit))
+        else:
+            sql = """SELECT timestamp, rssi, dbm, ber 
+                     FROM csq_log 
+                     ORDER BY timestamp ASC 
+                     LIMIT ?"""
+            cur.execute(sql, (limit,))
+
         rows = cur.fetchall()
-        rows.reverse()
         return [{"timestamp": r[0], "rssi": r[1], "dbm": r[2], "ber": r[3]} for r in rows]
+
     except Exception as e:
         print("[ERROR] Query gagal:", e)
         return []
@@ -136,23 +121,18 @@ def send_to_cloud(timestamp, rssi, dbm, ber):
         print("[SYNC ERROR]", e, flush=True)
 
 
-# === POLLING LOOP ===
+# === POLLING LOOP (untuk Raspberry, tidak aktif di Railway) ===
 def polling_loop():
-    """Loop pembacaan sinyal periodik (hanya di Raspberry)."""
     global current_interval
     next_poll = time.time()
     last_ts = None
 
     while True:
         ts = int(time.time())
-        rssi, dbm, ber = read_csq_once()
-
-        if rssi is not None:
-            insert_csq(ts, rssi, dbm, ber)
-            print(f"[LOG] {time.strftime('%H:%M:%S')} → RSSI={rssi}, dBm={dbm}, BER={ber}")
-            send_to_cloud(ts, rssi, dbm, ber)
-        else:
-            print(f"[WARN] {time.strftime('%H:%M:%S')} → gagal baca sinyal")
+        rssi, dbm, ber = 17, -125, 0  # dummy contoh (karena cloud tidak punya modem)
+        insert_csq(ts, rssi, dbm, ber)
+        print(f"[LOG] {time.strftime('%H:%M:%S')} → RSSI={rssi}, dBm={dbm}, BER={ber}")
+        send_to_cloud(ts, rssi, dbm, ber)
 
         if last_ts:
             print(f"[DEBUG] Jeda antar polling: {ts - last_ts}s (interval={current_interval}s)")
@@ -167,27 +147,24 @@ def polling_loop():
 
 
 # === API ENDPOINTS ===
-@app.route('/signal', methods=['GET'])
-def signal_now():
-    rssi, dbm, ber = read_csq_once()
-    return jsonify({"rssi": rssi, "dbm": dbm, "ber": ber})
-
-
 @app.route('/history', methods=['GET'])
 def history():
+    """Ambil data history dengan optional filter start-end."""
     limit = request.args.get('limit', default=300, type=int)
-    data = get_history(limit=limit)
+    start = request.args.get('start', type=int)
+    end = request.args.get('end', type=int)
+
+    data = get_history(limit=limit, start=start, end=end)
     return jsonify({"data": data})
 
 
 @app.route('/history', methods=['POST'])
 def add_history():
-    """Endpoint cloud untuk menerima data dari Raspberry dan simpan ke DB."""
+    """Terima data dari Raspberry dan simpan ke DB di cloud."""
     try:
         data = request.get_json()
         print("[CLOUD] Data diterima:", data, flush=True)
 
-        # Simpan ke database
         timestamp = data.get("timestamp")
         rssi = data.get("rssi")
         dbm = data.get("dbm")
@@ -195,7 +172,7 @@ def add_history():
 
         if timestamp and rssi is not None:
             insert_csq(timestamp, rssi, dbm, ber)
-            print(f"[DB] Data disimpan ke database: RSSI={rssi}, dBm={dbm}, BER={ber}")
+            print(f"[DB] Data disimpan: RSSI={rssi}, dBm={dbm}, BER={ber}")
         else:
             print("[WARN] Data tidak lengkap, tidak disimpan.")
 
@@ -210,44 +187,45 @@ def add_history():
 def index():
     return jsonify({
         "status": "ok",
-        "message": "ISAT Backend is running successfully 🚀 v2",
+        "message": "ISAT Backend is running successfully 🚀 v3",
         "available_routes": [
-            "/signal", "/history", "/config", "/auto_call/start", "/auto_call/stop"
+            "/history (GET, POST)",
+            "/config",
+            "/config/interval"
         ]
     })
+
 
 # === KONFIGURASI INTERVAL ===
 @app.route('/config/interval', methods=['GET'])
 def get_interval():
-    """Mengambil interval polling saat ini."""
     global current_interval
     return jsonify({"status": "ok", "interval": current_interval})
 
 
 @app.route('/config', methods=['GET'])
 def set_interval():
-    """Mengubah interval polling dari frontend."""
     global current_interval
     try:
         new_interval = request.args.get('interval', type=int)
         if new_interval and new_interval > 0:
             current_interval = new_interval
-            print(f"[CONFIG] Interval diubah menjadi {new_interval} detik", flush=True)
-            return jsonify({"status": "ok", "message": "Interval updated", "interval": current_interval})
+            print(f"[CONFIG] Interval diubah jadi {new_interval} detik", flush=True)
+            return jsonify({"status": "ok", "interval": current_interval})
         else:
-            return jsonify({"status": "error", "message": "Invalid interval value"}), 400
+            return jsonify({"status": "error", "msg": "Invalid interval value"}), 400
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({"status": "error", "msg": str(e)}), 500
 
 
 # === MAIN RUN ===
 if __name__ == '__main__':
     init_db()
-    
+
     on_cloud = os.environ.get("RAILWAY_ENVIRONMENT") is not None
 
     if on_cloud:
-        print("[INFO] Running on Railway Cloud - serial dan polling dinonaktifkan.", flush=True)
+        print("[INFO] Running on Railway Cloud - serial & polling dinonaktifkan.", flush=True)
         ser = None
     else:
         print("[INFO] Running locally - membuka koneksi serial.", flush=True)
