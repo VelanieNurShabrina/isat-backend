@@ -47,7 +47,7 @@ auto_sms_number = "+628xxxxxxxxx"
 auto_sms_message = "Auto SMS Test"
 
 last_auto_call_time = 0
-auto_call_duration = 15   # detik
+auto_call_duration = 15   
 last_auto_sms_time = 0
 
 # =========================
@@ -56,7 +56,7 @@ last_auto_sms_time = 0
 task_queue = Queue()
 
 # =========================
-# CURRENT TASK STATE (UNTUK DASHBOARD)
+# CURRENT TASK STATE 
 # =========================
 current_task = {
     "type": None,     # "CALL" | "SMS"
@@ -392,7 +392,7 @@ def calculate_dbm_from_table(rssi: int, dedicated: bool = False):
 
 
 # ==================================================
-# PARSE AT+CSQ (FINAL - DEDICATED FIX)
+# PARSE AT+CSQ (DEDICATED)
 # ==================================================
 def parse_csq_response(resp: str):
     global call_state
@@ -622,7 +622,7 @@ def make_call(number: str, call_seconds: int):
 
 
 # ==================================================
-# CALL MONITOR (FINAL STABLE VERSION)
+# CALL MONITOR 
 # ==================================================
 def call_monitor(timeout_sec: int):
     global call_active, call_state, call_stop_by_user
@@ -693,12 +693,12 @@ def call_monitor(timeout_sec: int):
 
             log(f"[CLCC STATE] stat={stat} ({state_name})")
 
-            # 🔥 DIALING DETECT
+            # DIALING DETECT
             if stat == 2:
                 has_dialing = True
                 call_state = "dialing"
 
-            # 🔥 ACTIVE DETECT (VALID ONLY IF BEFORE DIALING)
+            # ACTIVE DETECT (VALID ONLY IF BEFORE DIALING)
             elif stat == 0:
                 if has_dialing:
                     has_active = True
@@ -719,7 +719,7 @@ def call_monitor(timeout_sec: int):
                 try:
                     parts = line.split(",")
 
-                    # 🔥 cause harus integer valid
+                    # cause integer valid
                     if len(parts) > 5:
                         raw = parts[5].strip()
 
@@ -749,7 +749,7 @@ def call_monitor(timeout_sec: int):
         ser.read_all()
 
     # =========================
-    # FINAL STATUS (REALISTIC)
+    # FINAL STATUS 
     # =========================
     final_status = "failed"
 
@@ -757,12 +757,12 @@ def call_monitor(timeout_sec: int):
         duration = time.time() - connect_time
         log(f"[CALL] Connected duration: {duration:.2f}s")
 
-        # 🔥 threshold realistis
+        #  threshold realistis
         if duration >= 5:
             final_status = "success"
 
     # =========================
-    # FALLBACK CAUSE (WAJAR BANGET)
+    # FALLBACK CAUSE 
     # =========================
     if cause_code is None:
 
@@ -815,26 +815,26 @@ def auto_call_loop():
     while True:
         time.sleep(1)
 
-        # Auto call OFF → lewati
+        # Auto call OFF → pass
         if not auto_call_enabled:
             continue
 
-        # Jangan enqueue kalau masih ada call aktif
+        
         if call_active:
             continue
 
         now = time.time()
 
-        # Belum waktunya trigger
+        
         if now - last_auto_call_time < auto_call_interval:
             continue
 
         log("[AUTO CALL] Queueing auto call")
 
-        # Update waktu trigger
+        
         last_auto_call_time = now
 
-        # Masukkan ke FIFO queue
+        
         enqueue_task({
             "type": "CALL",
             "source": "auto",
@@ -851,7 +851,7 @@ def polling_loop():
 
     while True:
 
-        # ⛔ STOP TOTAL saat SMS atau CALL
+        
         if sms_session_active or call_active:
             time.sleep(0.2)
             continue
@@ -884,7 +884,7 @@ def encode_pdu_via_webpdu(smsc, number, message):
     resp = requests.post(url, data=payload, headers=headers, timeout=10)
 
     print("===== WEBPDU HTML START =====")
-    print(resp.text[:1500])   # print sebagian dulu
+    print(resp.text[:1500])   
     print("===== WEBPDU HTML END =====")
 
     raise Exception("STOP HERE FOR DEBUG")
@@ -990,7 +990,7 @@ def config_auto_call():
         f"duration={auto_call_duration}"
     )
 
-    save_config()  # 🔥 PENTING
+    save_config()  
 
     return jsonify({
         "status": "ok",
@@ -1014,7 +1014,7 @@ def status():
         "call_active": call_active,
         "call_state": call_state,
 
-        # 🔥 ACTIVE CALL INFO
+        # ACTIVE CALL INFO
         "active_call": active_call if call_active else None,
 
         # SIGNAL
@@ -1086,7 +1086,7 @@ def sms_stats():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    # total SMS hari ini
+    
     cur.execute("""
         SELECT COUNT(*)
         FROM sms_logs
@@ -1185,7 +1185,7 @@ def sms_encode():
         # Encode via encode_pdu()
         full_pdu, _ = encode_pdu("+870772001799", number, message)
 
-        # Hitung TPDU length (BENAR untuk AT+CMGS)
+        # TPDU length
         smsc_len = int(full_pdu[:2], 16)
         start_tpdu = (1 + smsc_len) * 2
         tpdu = full_pdu[start_tpdu:]
@@ -1245,7 +1245,7 @@ def send_sms_internal(number: str, message: str):
     log("[SMS] START SMS SESSION")
 
     try:
-        # 🔥 FULL PDU dari encoder
+        # FULL PDU encoder
         full_pdu, _ = encode_isatphone_pdu(SMSC_NUMBER, number, message)
 
         smsc_len = int(full_pdu[0:2], 16)
@@ -1288,7 +1288,7 @@ def send_sms_internal(number: str, message: str):
 
             ser.write((full_pdu + "\x1A\r").encode())
 
-        # Tunggu respon modem
+        # respon modem
         time.sleep(2)
         resp = ser.read_all().decode(errors="ignore")
         log(f"[SMS] MODEM RESP: {resp}")
@@ -1406,7 +1406,7 @@ def task_worker_loop():
             log(f"[WORKER][ERROR] {e}")
 
         finally:
-            # RESET STATUS SETELAH TASK SELESAI
+            # RESET STATUS 
             current_task["type"] = None
             current_task["source"] = None
 
@@ -1454,7 +1454,7 @@ def config_auto_sms():
         f"message={auto_sms_message}"
     )
 
-    save_config()  # 🔥 PENTING
+    save_config()  # 
 
     return jsonify({
         "status": "ok",
