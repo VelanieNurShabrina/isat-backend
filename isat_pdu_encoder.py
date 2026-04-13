@@ -2,8 +2,8 @@
 # isat_pdu_encoder.py
 # FINAL – ISATPHONE COMPATIBLE PDU ENCODER
 # - GSM 7-bit
-# - Valid untuk AT+CMGS
-# - Length SUDAH BENAR (TPDU only)
+# - Valid AT+CMGS
+# - Length(TPDU only)
 # =========================================================
 
 def swap_nibbles(s):
